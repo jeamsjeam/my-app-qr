@@ -1,28 +1,65 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { BarCodeScanner } from 'expo-barcode-scanner';
+import { db, setupDatabase } from './databases'; // Asegúrate de que la ruta sea correcta
+
 
 export default function App() {
   const [hasPermission, setHasPermission] = useState(null);
   const [scanned, setScanned] = useState(false);
   const [qrData, setQrData] = useState(null);
+  const [employeeData, setEmployeeData] = useState(null);
+  const [dbInitialized, setDbInitialized] = useState(false); // Nuevo estado para rastrear inicialización de la base de datos
 
-  useEffect(() => {
-    (async () => {
+  useEffect(() => {    
+   
+    (async () => {     
       const { status } = await BarCodeScanner.requestPermissionsAsync();
-      setHasPermission(status === 'granted');
+      setHasPermission(status === 'granted');     
+      setupDatabase(); // Llama a setupDatabase para asegurar que la tabla esté creada
+      setDbInitialized(true); // Establece el estado como inicializado después de inicializar la base de datos
     })();
   }, []);
+
+  const searchEmployeeByNumber = (employeeNumber) => {
+    db.transaction((tx) => {
+      tx.executeSql(
+        'SELECT * FROM employees WHERE numero_personal = ?',
+        [employeeNumber],
+        (_, { rows }) => {
+          if (rows.length > 0) {
+            const employee = rows.item(0);
+            setEmployeeData({ cédula: employee.cedula, nombre: employee.nombre });
+          } else {
+            setEmployeeData(null);
+          }
+        },
+        (_, error) => {
+          console.error(error);
+        }
+      );
+    });
+  };
 
   const handleBarCodeScanned = ({ type, data }) => {
     setScanned(true);
     setQrData(data);
+    searchEmployeeByNumber(data);
   };
 
   const handleScanAgain = () => {
     setScanned(false);
     setQrData(null);
+    setEmployeeData(null);
   };
+
+  if (!dbInitialized) {
+    return (
+      <View style={styles.container}>
+        <Text>Initializing database...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -42,7 +79,15 @@ export default function App() {
             />
           ) : (
             <View style={styles.qrDataContainer}>
-              <Text>{qrData}</Text>
+              {employeeData ? (
+                <Text>
+                  Cédula: {employeeData.cédula}
+                  {'\n'}
+                  Nombre: {employeeData.nombre}
+                </Text>
+              ) : (
+                <Text>No se encontró el empleado</Text>
+              )}
               <TouchableOpacity onPress={handleScanAgain} style={styles.scanAgainButton}>
                 <Text>Scan Again</Text>
               </TouchableOpacity>
@@ -62,7 +107,7 @@ const styles = StyleSheet.create({
   },
   logoContainer: {
     alignItems: 'center',
-    marginBottom: 50, // Ajusta este valor para hacer el contenedor del logo más pequeño
+    marginBottom: 50,
   },
   logo: {
     width: 200,
@@ -72,7 +117,7 @@ const styles = StyleSheet.create({
   qrScannerContainer: {
     flex: 1,
     width: '100%',
-    marginBottom: 400
+    marginBottom: 400,
   },
   qrDataContainer: {
     justifyContent: 'center',
